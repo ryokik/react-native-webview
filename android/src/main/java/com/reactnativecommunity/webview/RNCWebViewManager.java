@@ -359,6 +359,11 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     ((RNCWebView) view).setInjectedJavaScript(injectedJavaScript);
   }
 
+  @ReactProp(name = "injectedJavaScriptBeforeDocumentLoad")
+  public void setInjectedJavaScriptBeforeDocumentLoad(WebView view, @Nullable String injectedJavaScriptBeforeDocumentLoad) {
+    ((RNCWebView) view).setInjectedJavaScriptBeforeDocumentLoad(injectedJavaScriptBeforeDocumentLoad);
+  }
+
   @ReactProp(name = "messagingEnabled")
   public void setMessagingEnabled(WebView view, boolean enabled) {
     ((RNCWebView) view).setMessagingEnabled(enabled);
@@ -885,6 +890,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   protected static class RNCWebView extends WebView implements LifecycleEventListener {
     protected @Nullable
     String injectedJS;
+    String injectedJSBeforeDocumentLoad;
     protected boolean messagingEnabled = false;
     protected @Nullable
     RNCWebViewClient mRNCWebViewClient;
@@ -954,6 +960,10 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     public void setInjectedJavaScript(@Nullable String js) {
       injectedJS = js;
+    }
+
+    public void setInjectedJavaScriptBeforeDocumentLoad(@Nullable String js) {
+      injectedJSBeforeDocumentLoad = js;
     }
 
     protected RNCWebViewBridge createRNCWebViewBridge(RNCWebView webView) {

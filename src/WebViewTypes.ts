@@ -211,6 +211,7 @@ export interface CommonNativeWebViewProps extends ViewProps {
   cacheEnabled?: boolean;
   incognito?: boolean;
   injectedJavaScript?: string;
+  injectedJavaScriptBeforeDocumentLoad?: string;
   mediaPlaybackRequiresUserAction?: boolean;
   messagingEnabled: boolean;
   onScroll?: (event: NativeScrollEvent) => void;
