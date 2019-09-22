@@ -31,6 +31,7 @@ import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -66,16 +67,28 @@ import com.reactnativecommunity.webview.events.TopShouldStartLoadWithRequestEven
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.InputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
 import javax.annotation.Nullable;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.OkHttpClient.Builder;
+import okhttp3.Request;
+import okhttp3.Response;
+
+import static okhttp3.internal.Util.UTF_8;
 
 /**
  * Manages instances of {@link WebView}
@@ -504,7 +517,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   @Override
   protected void addEventEmitters(ThemedReactContext reactContext, WebView view) {
     // Do not register default touch emitter and let WebView implementation handle touches
-    view.setWebViewClient(new RNCWebViewClient());
+    view.setWebViewClient(new RNCWebViewClient(view.getSettings().getUserAgentString()));
   }
 
   @Override
@@ -659,10 +672,21 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   }
 
   protected static class RNCWebViewClient extends WebViewClient {
+    private String userAgentString;
+    private OkHttpClient httpClient;
 
     protected boolean mLastLoadFailed = false;
     protected @Nullable
     ReadableArray mUrlPrefixesForDefaultIntent;
+
+    public RNCWebViewClient(String userAgentString) {
+      this.userAgentString = userAgentString;
+
+      httpClient = new okhttp3.OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build();
+    }
 
     @Override
     public void onPageFinished(WebView webView, String url) {
@@ -707,6 +731,40 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       return this.shouldOverrideUrlLoading(view, url);
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        Uri url = request.getUrl();
+        String urlStr = url.toString();
+
+        try {
+            Request req = new Request.Builder()
+                    .header("User-Agent", userAgentString)
+                    .url(urlStr)
+                    .build();
+
+            Response response = httpClient.newCall(req).execute();
+
+            if (response.isRedirect()) {
+              return null;
+            }
+
+            if (!response.header("Content-Type", "").startsWith("text/html")) {
+                return null;
+            }
+
+            InputStream is = response.body().byteStream();
+            MediaType contentType = response.body().contentType();
+            Charset charset = contentType != null ? contentType.charset(UTF_8) : UTF_8;
+            if (response.code() == HttpURLConnection.HTTP_OK) {
+                is = new InputStreamWithInjectedJS(is, ((RNCWebView)view).injectedJSBeforeDocumentLoad, charset, view.getContext());
+            }
+            return new WebResourceResponse("text/html", charset.name(), is);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+  
     @Override
     public void onReceivedError(
       WebView webView,
