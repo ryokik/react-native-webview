@@ -221,6 +221,13 @@ static NSURLCredential* clientAuthenticationCredential;
       }
     }
 
+    if (_injectedJavaScriptBeforeDocumentLoad) {
+        WKUserScript* script = [[WKUserScript alloc] initWithSource:_injectedJavaScriptBeforeDocumentLoad
+                                                              injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                                           forMainFrameOnly:YES];
+        [wkWebViewConfig.userContentController addUserScript:script];
+    }
+
     _webView = [[WKWebView alloc] initWithFrame:self.bounds configuration: wkWebViewConfig];
     _webView.scrollView.delegate = self;
     _webView.UIDelegate = self;
