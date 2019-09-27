@@ -737,6 +737,10 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
         Uri url = request.getUrl();
         String urlStr = url.toString();
 
+        if (!request.isForMainFrame()) {
+          return null;
+        }
+
         try {
             Request req = new Request.Builder()
                     .header("User-Agent", userAgentString)
