@@ -64,6 +64,7 @@ import com.reactnativecommunity.webview.events.TopLoadingProgressEvent;
 import com.reactnativecommunity.webview.events.TopLoadingStartEvent;
 import com.reactnativecommunity.webview.events.TopMessageEvent;
 import com.reactnativecommunity.webview.events.TopShouldStartLoadWithRequestEvent;
+import com.reactnativecommunity.webview.events.TopCreateNewWindowEvent;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -82,6 +83,7 @@ import javax.annotation.Nullable;
 import android.os.Handler;
 import android.webkit.WebView.HitTestResult;
 import android.os.Message;
+import android.widget.RelativeLayout;
 
 /**
  * Manages instances of {@link WebView}
@@ -172,6 +174,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     settings.setBuiltInZoomControls(true);
     settings.setDisplayZoomControls(false);
     settings.setDomStorageEnabled(true);
+    settings.setSupportMultipleWindows(true);
 
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(false);
@@ -411,7 +414,6 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   public void setMessagingEnabled(WebView view, boolean enabled) {
     ((RNCWebView) view).setMessagingEnabled(enabled);
   }
-   
   @ReactProp(name = "incognito")
   public void setIncognito(WebView view, boolean enabled) {
     // Remove all previous cookies
@@ -560,6 +562,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     export.put(TopShouldStartLoadWithRequestEvent.EVENT_NAME, MapBuilder.of("registrationName", "onShouldStartLoadWithRequest"));
     export.put(ScrollEventType.getJSEventName(ScrollEventType.SCROLL), MapBuilder.of("registrationName", "onScroll"));
     export.put(TopHttpErrorEvent.EVENT_NAME, MapBuilder.of("registrationName", "onHttpError"));
+    export.put(TopCreateNewWindowEvent.EVENT_NAME, MapBuilder.of("registrationName", "onCreateNewWindow"));
     return export;
   }
 
@@ -937,6 +940,40 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       boolean allowMultiple = fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
       Intent intent = fileChooserParams.createIntent();
       return getModule(mReactContext).startPhotoPickerIntent(filePathCallback, intent, acceptTypes, allowMultiple);
+    }
+    @Override
+    public boolean onCreateWindow(final WebView webView, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+      final WebView newView = new WebView(mReactContext);
+      newView.setWebViewClient(new WebViewClient() {
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+          WritableMap eventData = Arguments.createMap();
+          eventData.putDouble("target", webView.getId());
+          eventData.putString("url", url);
+          eventData.putBoolean("loading", false);
+          eventData.putDouble("progress", webView.getProgress());
+          eventData.putString("title", webView.getTitle());
+          eventData.putBoolean("canGoBack", webView.canGoBack());
+          eventData.putBoolean("canGoForward", webView.canGoForward());
+          dispatchEvent(webView, new TopCreateNewWindowEvent(webView.getId(), eventData));
+          try {
+            webView.removeView(newView);
+            newView.destroy();
+          } catch (Exception e) {
+            // Exception if occurs here only means that newView was removed.
+            // No need to do anything in this case
+          }
+        }
+      });
+      // Create dynamically a new view
+      newView.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+      webView.addView(newView);
+
+      WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+      transport.setWebView(newView);
+      resultMsg.sendToTarget();
+      return true;
     }
 
     @Override
