@@ -7,7 +7,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.Manifest;
@@ -72,7 +71,6 @@ import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -741,26 +739,6 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
       activeUrl = url;
-      if (url.startsWith("intent://")) {
-        try {
-          Context context = view.getContext();
-          Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
-          if (intent != null) {
-            view.stopLoading();
-            PackageManager packageManager = context.getPackageManager();
-            ResolveInfo info = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-            if (info != null) {
-              context.startActivity(intent);
-            } else {
-              String fallbackUrl = intent.getStringExtra("browser_fallback_url");
-              view.loadUrl(fallbackUrl);
-            }
-            return true;
-          }
-        } catch (URISyntaxException e) {
-          e.printStackTrace();
-        }
-      }
       dispatchEvent(
         view,
         new TopShouldStartLoadWithRequestEvent(
