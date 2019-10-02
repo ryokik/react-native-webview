@@ -64,6 +64,7 @@ import com.reactnativecommunity.webview.events.TopLoadingProgressEvent;
 import com.reactnativecommunity.webview.events.TopLoadingStartEvent;
 import com.reactnativecommunity.webview.events.TopMessageEvent;
 import com.reactnativecommunity.webview.events.TopShouldStartLoadWithRequestEvent;
+import com.reactnativecommunity.webview.events.TopCreateNewWindowEvent;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -78,6 +79,11 @@ import java.util.Locale;
 import java.util.Map;
 
 import javax.annotation.Nullable;
+
+import android.os.Handler;
+import android.webkit.WebView.HitTestResult;
+import android.os.Message;
+import android.widget.RelativeLayout;
 
 /**
  * Manages instances of {@link WebView}
@@ -168,6 +174,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     settings.setBuiltInZoomControls(true);
     settings.setDisplayZoomControls(false);
     settings.setDomStorageEnabled(true);
+    settings.setSupportMultipleWindows(true);
 
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(false);
@@ -185,6 +192,44 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     if (ReactBuildConfig.DEBUG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
       WebView.setWebContentsDebuggingEnabled(true);
     }
+
+    webView.setOnLongClickListener(new View.OnLongClickListener() {
+      @Override
+      public boolean onLongClick(View view) {
+        final RNCWebView webView = (RNCWebView) view;
+        HitTestResult result = webView.getHitTestResult();
+        final String extra = result.getExtra();
+        final int type = result.getType();
+        if (type == HitTestResult.SRC_IMAGE_ANCHOR_TYPE || type == HitTestResult.SRC_ANCHOR_TYPE || type == HitTestResult.IMAGE_TYPE || type == HitTestResult.UNKNOWN_TYPE) {
+          Handler handler = new Handler(webView.getHandler().getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+              String url = (String) msg.getData().get("url");
+              String image_url = extra;
+              if (url == null && image_url == null) {
+                super.handleMessage(msg);
+              } else {
+                if (type == HitTestResult.SRC_ANCHOR_TYPE) {
+                  image_url = "";
+                }
+                // when any downloaded image file is showing in webView - https://github.com/lunascape/react-native-wkwebview/pull/45
+                if (type == HitTestResult.IMAGE_TYPE && url == null) {
+                  url = image_url;
+                }
+                WritableMap data = Arguments.createMap();
+                data.putString("type", "contextmenu");
+                data.putString("url", url);
+                data.putString("image_url", image_url);
+                dispatchEvent(webView, new TopMessageEvent(webView.getId(), data));
+              }
+            }
+          };
+          Message msg = handler.obtainMessage();
+          webView.requestFocusNodeHref(msg);
+        }
+        return false; // return true to disable copy/paste action bar
+      }
+    });
 
     webView.setDownloadListener(new DownloadListener() {
       public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
@@ -369,7 +414,6 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   public void setMessagingEnabled(WebView view, boolean enabled) {
     ((RNCWebView) view).setMessagingEnabled(enabled);
   }
-   
   @ReactProp(name = "incognito")
   public void setIncognito(WebView view, boolean enabled) {
     // Remove all previous cookies
@@ -518,6 +562,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     export.put(TopShouldStartLoadWithRequestEvent.EVENT_NAME, MapBuilder.of("registrationName", "onShouldStartLoadWithRequest"));
     export.put(ScrollEventType.getJSEventName(ScrollEventType.SCROLL), MapBuilder.of("registrationName", "onScroll"));
     export.put(TopHttpErrorEvent.EVENT_NAME, MapBuilder.of("registrationName", "onHttpError"));
+    export.put(TopCreateNewWindowEvent.EVENT_NAME, MapBuilder.of("registrationName", "onCreateNewWindow"));
     return export;
   }
 
@@ -769,6 +814,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       event.putString("title", webView.getTitle());
       event.putBoolean("canGoBack", webView.canGoBack());
       event.putBoolean("canGoForward", webView.canGoForward());
+      event.putDouble("progress", webView.getProgress());
       return event;
     }
 
@@ -894,6 +940,40 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       boolean allowMultiple = fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
       Intent intent = fileChooserParams.createIntent();
       return getModule(mReactContext).startPhotoPickerIntent(filePathCallback, intent, acceptTypes, allowMultiple);
+    }
+    @Override
+    public boolean onCreateWindow(final WebView webView, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+      final WebView newView = new WebView(mReactContext);
+      newView.setWebViewClient(new WebViewClient() {
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+          WritableMap eventData = Arguments.createMap();
+          eventData.putDouble("target", webView.getId());
+          eventData.putString("url", url);
+          eventData.putBoolean("loading", false);
+          eventData.putDouble("progress", webView.getProgress());
+          eventData.putString("title", webView.getTitle());
+          eventData.putBoolean("canGoBack", webView.canGoBack());
+          eventData.putBoolean("canGoForward", webView.canGoForward());
+          dispatchEvent(webView, new TopCreateNewWindowEvent(webView.getId(), eventData));
+          try {
+            webView.removeView(newView);
+            newView.destroy();
+          } catch (Exception e) {
+            // Exception if occurs here only means that newView was removed.
+            // No need to do anything in this case
+          }
+        }
+      });
+      // Create dynamically a new view
+      newView.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+      webView.addView(newView);
+
+      WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+      transport.setWebView(newView);
+      resultMsg.sendToTarget();
+      return true;
     }
 
     @Override
