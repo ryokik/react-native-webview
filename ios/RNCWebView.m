@@ -677,6 +677,7 @@ NSString *const RNCJSNavigationScheme = @"react-js-navigation";
     @"url": _webView.URL.absoluteString ?: @"",
     @"title": _webView.title ?: @"",
     @"loading" : @(_webView.loading),
+    @"progress" : @(_webView.estimatedProgress),
     @"canGoBack": @(_webView.canGoBack),
     @"canGoForward" : @(_webView.canGoForward)
   };
