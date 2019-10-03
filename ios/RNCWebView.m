@@ -121,6 +121,12 @@ NSString *const RNCJSNavigationScheme = @"react-js-navigation";
   return self;
 }
 
+-(void)handleRefresh:(UIRefreshControl *)refresh {
+  // reload webview
+  [_webView reload];
+  [refresh endRefreshing];
+}
+
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -261,6 +267,11 @@ NSString *const RNCJSNavigationScheme = @"react-js-navigation";
     _webView.allowsLinkPreview = _allowsLinkPreview;
     [_webView addObserver:self forKeyPath:@"estimatedProgress" options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew context:nil];
     _webView.allowsBackForwardNavigationGestures = _allowsBackForwardNavigationGestures;
+      
+    // add pull down to reload feature in scrollview of webview
+    UIRefreshControl *refreshControl = [[UIRefreshControl alloc] init];
+    [refreshControl addTarget:self action:@selector(handleRefresh:) forControlEvents:UIControlEventValueChanged];
+    [_webView.scrollView addSubview:refreshControl];
 
     if (_userAgent) {
       _webView.customUserAgent = _userAgent;
