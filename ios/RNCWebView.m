@@ -13,6 +13,8 @@
 
 #import "objc/runtime.h"
 
+#import "WKWebView+BrowserHack.h"
+
 static NSTimer *keyboardTimer;
 static NSString *const MessageHandlerName = @"ReactNativeWebView";
 static NSURLCredential* clientAuthenticationCredential;
@@ -63,6 +65,8 @@ static NSDictionary* customCertificatesForHost;
   BOOL _isFullScreenVideoOpen;
   UIStatusBarStyle _savedStatusBarStyle;
   BOOL _savedStatusBarHidden;
+  BOOL longPress;
+  NSBundle* resourceBundle;
 
 #if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 110000 /* __IPHONE_11_0 */
   UIScrollViewContentInsetAdjustmentBehavior _savedContentInsetAdjustmentBehavior;
@@ -113,6 +117,9 @@ static NSDictionary* customCertificatesForHost;
                                                    name:UIWindowDidBecomeHiddenNotification
                                                  object:nil];
   }
+
+  NSString* bundlePath = [[NSBundle mainBundle] pathForResource:@"Scripts" ofType:@"bundle"];
+  resourceBundle = [NSBundle bundleWithPath:bundlePath];
 
   return self;
 }
@@ -263,11 +270,15 @@ static NSDictionary* customCertificatesForHost;
     _webView.allowsLinkPreview = _allowsLinkPreview;
     [_webView addObserver:self forKeyPath:@"estimatedProgress" options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew context:nil];
     _webView.allowsBackForwardNavigationGestures = _allowsBackForwardNavigationGestures;
-      
+
     // add pull down to reload feature in scrollview of webview
     UIRefreshControl *refreshControl = [[UIRefreshControl alloc] init];
     [refreshControl addTarget:self action:@selector(handleRefresh:) forControlEvents:UIControlEventValueChanged];
     [_webView.scrollView addSubview:refreshControl];
+
+    UILongPressGestureRecognizer* longGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPressed:)];
+    longGesture.delegate = self;
+    [_webView addGestureRecognizer:longGesture];
 
     if (_userAgent) {
       _webView.customUserAgent = _userAgent;
@@ -283,6 +294,31 @@ static NSDictionary* customCertificatesForHost;
     [self setKeyboardDisplayRequiresUserAction: _savedKeyboardDisplayRequiresUserAction];
     [self visitSource];
   }
+}
+
+- (void)longPressed:(UILongPressGestureRecognizer*)sender {
+  if (sender.state == UIGestureRecognizerStateBegan) {
+    longPress = YES;
+    sender.enabled = NO;
+
+    NSUInteger touchCount = [sender numberOfTouches];
+    if (touchCount) {
+      CGPoint point = [sender locationOfTouch:0 inView:sender.view];
+      if ([_webView respondsToSelector:@selector(respondToTapAndHoldAtLocation:)]) {
+        NSDictionary* urlResult = [_webView respondToTapAndHoldAtLocation:point];
+        if (urlResult.allKeys.count == 0) {
+          longPress = NO;
+        }
+        _onMessage(@{@"name":@"reactNative", @"body": @{@"type":@"contextMenu", @"data":urlResult}});
+      }
+    }
+  } else if (sender.state == UIGestureRecognizerStateCancelled) {
+    sender.enabled = YES;
+  }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+  return YES;
 }
 
 // Update webview property when the component prop changes.
@@ -833,6 +869,11 @@ static NSDictionary* customCertificatesForHost;
     };
   });
 
+  if (longPress) {
+    longPress = NO;
+    return decisionHandler(WKNavigationActionPolicyCancel);
+  }
+
   WKNavigationType navigationType = navigationAction.navigationType;
   NSURLRequest *request = navigationAction.request;
 
@@ -904,7 +945,7 @@ static NSDictionary* customCertificatesForHost;
         _onHttpError(event);
       }
     }
-  }  
+  }
 
   decisionHandler(WKNavigationResponsePolicyAllow);
 }
@@ -964,6 +1005,14 @@ static NSDictionary* customCertificatesForHost;
 - (void)      webView:(WKWebView *)webView
   didFinishNavigation:(WKNavigation *)navigation
 {
+  if (resourceBundle) {
+    NSString *jsFile = @"_webview";
+
+    NSString *jsFilePath = [resourceBundle pathForResource:jsFile ofType:@"js"];
+    NSURL *jsURL = [NSURL fileURLWithPath:jsFilePath];
+    NSString *javascriptCode = [NSString stringWithContentsOfFile:jsURL.path encoding:NSUTF8StringEncoding error:nil];
+    [_webView stringByEvaluatingJavaScriptFromString:javascriptCode];
+  }
   if (_injectedJavaScript) {
     [self evaluateJS: _injectedJavaScript thenCall: ^(NSString *jsEvaluationValue) {
       NSMutableDictionary *event = [self baseEvent];
@@ -976,6 +1025,8 @@ static NSDictionary* customCertificatesForHost;
   } else if (_onLoadingFinish) {
     _onLoadingFinish([self baseEvent]);
   }
+
+  [webView evaluateJavaScript:@"document.body.style.webkitTouchCallout='none';" completionHandler:nil];
 }
 
 - (void)injectJavaScript:(NSString *)script
