@@ -18,26 +18,30 @@ static NSString *const MessageHandlerName = @"ReactNativeWebView";
 static NSURLCredential* clientAuthenticationCredential;
 static NSDictionary* customCertificatesForHost;
 
+// TODO: remove later after remove WKWebviewReborn
+NSString *const RNCJSNavigationScheme = @"react-js-navigation";
+
 // runtime trick to remove WKWebView keyboard default toolbar
 // see: http://stackoverflow.com/questions/19033292/ios-7-uiwebview-keyboard-issue/19042279#19042279
-@interface _SwizzleHelperWK : UIView
-@property (nonatomic, copy) WKWebView *webView;
-@end
-@implementation _SwizzleHelperWK
--(id)inputAccessoryView
-{
-    if (_webView == nil) {
-        return nil;
-    }
-
-    if ([_webView respondsToSelector:@selector(inputAssistantItem)]) {
-        UITextInputAssistantItem *inputAssistantItem = [_webView inputAssistantItem];
-        inputAssistantItem.leadingBarButtonGroups = @[];
-        inputAssistantItem.trailingBarButtonGroups = @[];
-    }
-    return nil;
-}
-@end
+// TODO: recover later after remove WKWebviewReborn
+//@interface _SwizzleHelperWK : UIView
+//@property (nonatomic, copy) WKWebView *webView;
+//@end
+//@implementation _SwizzleHelperWK
+//-(id)inputAccessoryView
+//{
+//    if (_webView == nil) {
+//        return nil;
+//    }
+//
+//    if ([_webView respondsToSelector:@selector(inputAssistantItem)]) {
+//        UITextInputAssistantItem *inputAssistantItem = [_webView inputAssistantItem];
+//        inputAssistantItem.leadingBarButtonGroups = @[];
+//        inputAssistantItem.trailingBarButtonGroups = @[];
+//    }
+//    return nil;
+//}
+//@end
 
 @interface RNCWebView () <WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIScrollViewDelegate, RCTAutoInsetsProtocol>
 @property (nonatomic, copy) RCTDirectEventBlock onLoadingStart;
@@ -565,7 +569,9 @@ static NSDictionary* customCertificatesForHost;
         newClass = objc_allocateClassPair(subview.class, [name cStringUsingEncoding:NSASCIIStringEncoding], 0);
         if(!newClass) return;
 
-        Method method = class_getInstanceMethod([_SwizzleHelperWK class], @selector(inputAccessoryView));
+        // TODO: recover later after remove WKWebviewReborn
+        // Method method = class_getInstanceMethod([_SwizzleHelperWK class], @selector(inputAccessoryView));
+        Method method = class_getInstanceMethod(newClass, @selector(inputAccessoryView));
         class_addMethod(newClass, @selector(inputAccessoryView), method_getImplementation(method), method_getTypeEncoding(method));
 
         objc_registerClassPair(newClass);
