@@ -69,10 +69,14 @@ import com.reactnativecommunity.webview.events.TopCreateNewWindowEvent;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.InputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
@@ -84,6 +88,13 @@ import android.os.Handler;
 import android.webkit.WebView.HitTestResult;
 import android.os.Message;
 import android.widget.RelativeLayout;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.OkHttpClient.Builder;
+import okhttp3.Request;
+import okhttp3.Response;
+
+import static okhttp3.internal.Util.UTF_8;
 
 /**
  * Manages instances of {@link WebView}
@@ -410,6 +421,11 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     ((RNCWebView) view).setInjectedJavaScript(injectedJavaScript);
   }
 
+  @ReactProp(name = "injectedJavaScriptBeforeDocumentLoad")
+  public void setInjectedJavaScriptBeforeDocumentLoad(WebView view, @Nullable String injectedJavaScriptBeforeDocumentLoad) {
+    ((RNCWebView) view).setInjectedJavaScriptBeforeDocumentLoad(injectedJavaScriptBeforeDocumentLoad);
+  }
+
   @ReactProp(name = "messagingEnabled")
   public void setMessagingEnabled(WebView view, boolean enabled) {
     ((RNCWebView) view).setMessagingEnabled(enabled);
@@ -549,7 +565,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   @Override
   protected void addEventEmitters(ThemedReactContext reactContext, WebView view) {
     // Do not register default touch emitter and let WebView implementation handle touches
-    view.setWebViewClient(new RNCWebViewClient());
+    view.setWebViewClient(new RNCWebViewClient(view.getSettings().getUserAgentString()));
   }
 
   @Override
@@ -706,10 +722,21 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   }
 
   protected static class RNCWebViewClient extends WebViewClient {
+    private String userAgentString;
+    private OkHttpClient httpClient;
 
     protected boolean mLastLoadFailed = false;
     protected @Nullable
     ReadableArray mUrlPrefixesForDefaultIntent;
+
+    public RNCWebViewClient(String userAgentString) {
+      this.userAgentString = userAgentString;
+
+      httpClient = new okhttp3.OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build();
+    }
 
     @Override
     public void onPageFinished(WebView webView, String url) {
@@ -753,6 +780,40 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
       final String url = request.getUrl().toString();
       return this.shouldOverrideUrlLoading(view, url);
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        Uri url = request.getUrl();
+        String urlStr = url.toString();
+
+        try {
+            Request req = new Request.Builder()
+                    .header("User-Agent", userAgentString)
+                    .url(urlStr)
+                    .build();
+
+            Response response = httpClient.newCall(req).execute();
+
+            if (response.isRedirect()) {
+              return null;
+            }
+
+            if (!response.header("Content-Type", "").startsWith("text/html")) {
+                return null;
+            }
+
+            InputStream is = response.body().byteStream();
+            MediaType contentType = response.body().contentType();
+            Charset charset = contentType != null ? contentType.charset(UTF_8) : UTF_8;
+            if (response.code() == HttpURLConnection.HTTP_OK) {
+                is = new InputStreamWithInjectedJS(is, ((RNCWebView)view).injectedJSBeforeDocumentLoad, charset, view.getContext());
+            }
+            return new WebResourceResponse("text/html", charset.name(), is);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     @Override
@@ -1001,6 +1062,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   protected static class RNCWebView extends WebView implements LifecycleEventListener {
     protected @Nullable
     String injectedJS;
+    String injectedJSBeforeDocumentLoad;
     protected boolean messagingEnabled = false;
     protected @Nullable
     RNCWebViewClient mRNCWebViewClient;
@@ -1070,6 +1132,10 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     public void setInjectedJavaScript(@Nullable String js) {
       injectedJS = js;
+    }
+
+    public void setInjectedJavaScriptBeforeDocumentLoad(@Nullable String js) {
+      injectedJSBeforeDocumentLoad = js;
     }
 
     protected RNCWebViewBridge createRNCWebViewBridge(RNCWebView webView) {

@@ -247,6 +247,13 @@ NSString *const RNCJSNavigationScheme = @"react-js-navigation";
       }
     }
 
+    if (_injectedJavaScriptBeforeDocumentLoad) {
+        WKUserScript* script = [[WKUserScript alloc] initWithSource:_injectedJavaScriptBeforeDocumentLoad
+                                                              injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                                           forMainFrameOnly:YES];
+        [wkWebViewConfig.userContentController addUserScript:script];
+    }
+
     _webView = [[WKWebView alloc] initWithFrame:self.bounds configuration: wkWebViewConfig];
     [self setBackgroundColor: _savedBackgroundColor];
     _webView.scrollView.delegate = self;
