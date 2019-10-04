@@ -208,6 +208,10 @@ export type OnShouldStartLoadWithRequest = (
   event: WebViewNavigation,
 ) => boolean;
 
+export type OnCreateNewWindow = (
+  event: WebViewEvent,
+) => void;
+
 export interface CommonNativeWebViewProps extends ViewProps {
   cacheEnabled?: boolean;
   incognito?: boolean;
@@ -223,6 +227,7 @@ export interface CommonNativeWebViewProps extends ViewProps {
   onHttpError: (event: WebViewHttpErrorEvent) => void;
   onMessage: (event: WebViewMessageEvent) => void;
   onShouldStartLoadWithRequest: (event: WebViewNavigationEvent) => void;
+  onCreateNewWindow?: (event: WebViewEvent) => void;
   showsHorizontalScrollIndicator?: boolean;
   showsVerticalScrollIndicator?: boolean;
   // TODO: find a better way to type this.
@@ -686,6 +691,11 @@ export interface WebViewSharedProps extends ViewProps {
    * to stop loading. The `navigationType` is always `other` on android.
    */
   onShouldStartLoadWithRequest?: OnShouldStartLoadWithRequest;
+
+  /**
+   * Allows custom handling of window.open() by a JS handler
+   */
+  onCreateNewWindow?: OnCreateNewWindow;
 
   /**
    * Override the native component used to render the WebView. Enables a custom native
