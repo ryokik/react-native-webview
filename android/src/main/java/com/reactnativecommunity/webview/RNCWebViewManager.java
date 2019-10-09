@@ -73,22 +73,27 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 import javax.annotation.Nullable;
 
+import okhttp3.Cookie;
+import okhttp3.CookieJar;
+import okhttp3.Headers;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
-import okhttp3.OkHttpClient.Builder;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 import static okhttp3.internal.Util.UTF_8;
 import android.os.Handler;
@@ -565,7 +570,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   @Override
   protected void addEventEmitters(ThemedReactContext reactContext, WebView view) {
     // Do not register default touch emitter and let WebView implementation handle touches
-    view.setWebViewClient(new RNCWebViewClient(view.getSettings().getUserAgentString()));
+    view.setWebViewClient(new RNCWebViewClient());
   }
 
   @Override
@@ -722,19 +727,18 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   }
 
   protected static class RNCWebViewClient extends WebViewClient {
-    private String userAgentString;
     private OkHttpClient httpClient;
 
     protected boolean mLastLoadFailed = false;
     protected @Nullable
     ReadableArray mUrlPrefixesForDefaultIntent;
 
-    public RNCWebViewClient(String userAgentString) {
-      this.userAgentString = userAgentString;
+    public RNCWebViewClient() {
 
       httpClient = new okhttp3.OkHttpClient.Builder()
-        .followRedirects(false)
+        .followRedirects(true)
         .followSslRedirects(false)
+        .cookieJar(new RNCWebViewCookieJar())
         .build();
     }
 
@@ -789,32 +793,58 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
         String urlStr = url.toString();
 
         if (!request.isForMainFrame()) {
-          return null;
+            return null;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            if (request.isRedirect()) {
+                return null;
+            }
+        }
+
+        if (!TextUtils.equals(request.getMethod(), "GET")) {
+            return null;
         }
 
         try {
+            Map<String, String> requestHeaders = request.getRequestHeaders();
             Request req = new Request.Builder()
-                    .header("User-Agent", userAgentString)
-                    .url(urlStr)
-                    .build();
+                .headers(Headers.of(requestHeaders))
+                .url(urlStr)
+                .build();
 
             Response response = httpClient.newCall(req).execute();
 
             if (response.isRedirect()) {
-              return null;
-            }
-
-            if (!response.header("Content-Type", "").startsWith("text/html")) {
                 return null;
             }
 
-            InputStream is = response.body().byteStream();
-            MediaType contentType = response.body().contentType();
-            Charset charset = contentType != null ? contentType.charset(UTF_8) : UTF_8;
-            if (response.code() == HttpURLConnection.HTTP_OK) {
-                is = new InputStreamWithInjectedJS(is, ((RNCWebView)view).injectedJSBeforeDocumentLoad, charset, view.getContext());
+            ResponseBody body = response.body();
+            MediaType type = body != null ? body.contentType() : null;
+            String mimeType = type != null ? type.toString() : null;
+            Charset charset = type != null ? type.charset(UTF_8) : null;
+            String encoding = charset != null ? charset.displayName() : null;
+            InputStream bis = body != null ? body.byteStream() : null;
+            HashMap<String, String> map = new HashMap<>();
+            Headers headers = response.headers();
+            for (String key : headers.names()) {
+                map.put(key, headers.get(key));
             }
-            return new WebResourceResponse("text/html", charset.name(), is);
+            int statusCode = response.code();
+            String message = response.message();
+
+            if (mimeType == null || !mimeType.startsWith("text/html")) {
+                return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
+            }
+
+            if (!response.isSuccessful()) {
+                return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
+            }
+
+            InputStreamWithInjectedJS iis = new InputStreamWithInjectedJS(
+                bis, ((RNCWebView) view).injectedJSBeforeDocumentLoad, charset);
+
+            return new WebResourceResponse("text/html", encoding, statusCode, message, map, iis);
         } catch (IOException e) {
             return null;
         }
@@ -1254,4 +1284,30 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       }
     }
   }
+
+    private static class RNCWebViewCookieJar implements CookieJar {
+        @Override
+        public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
+            String urlString = url.toString();
+
+            for (Cookie cookie : cookies) {
+                CookieManager.getInstance().setCookie(urlString, cookie.toString());
+            }
+
+        }
+
+        @Override
+        public List<Cookie> loadForRequest(HttpUrl url) {
+            String cookie = CookieManager.getInstance().getCookie(url.toString());
+            if (TextUtils.isEmpty(cookie)) {
+                return Collections.emptyList();
+            }
+            String[] headers = cookie.split(";");
+            ArrayList<Cookie> cookies = new ArrayList<>(headers.length);
+            for (String header : headers) {
+                cookies.add(Cookie.parse(url, header));
+            }
+            return cookies;
+        }
+    }
 }
