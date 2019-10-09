@@ -832,6 +832,9 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
             }
             int statusCode = response.code();
             String message = response.message();
+            if (TextUtils.isEmpty(message)) {
+                message = "Empty";
+            }
 
             if (mimeType == null || !mimeType.startsWith("text/html")) {
                 return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
