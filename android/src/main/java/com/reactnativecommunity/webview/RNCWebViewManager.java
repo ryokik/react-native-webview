@@ -731,7 +731,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     public RNCWebViewClient() {
 
       httpClient = new okhttp3.OkHttpClient.Builder()
-        .followRedirects(true)
+        .followRedirects(false)
         .followSslRedirects(false)
         .cookieJar(new RNCWebViewCookieJar())
         .build();
