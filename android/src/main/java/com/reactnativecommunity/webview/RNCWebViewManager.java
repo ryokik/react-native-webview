@@ -789,68 +789,77 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-        Uri url = request.getUrl();
-        String urlStr = url.toString();
+      Uri url = request.getUrl();
+      String urlStr = url.toString();
 
-        if (!request.isForMainFrame()) {
-            return null;
+      if (!request.isForMainFrame()) {
+        return null;
+      }
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (request.isRedirect()) {
+          return null;
+        }
+      }
+
+      if (!TextUtils.equals(request.getMethod(), "GET")) {
+        return null;
+      }
+
+      try {
+        Map<String, String> requestHeaders = request.getRequestHeaders();
+        Request req = new Request.Builder()
+          .headers(Headers.of(requestHeaders))
+          .url(urlStr)
+          .build();
+
+        Response response = httpClient.newCall(req).execute();
+
+        ResponseBody body = response.body();
+        MediaType type = body != null ? body.contentType() : null;
+        String mimeType = type != null ? type.type() + "/" + type.subtype() : null;
+        Charset charset = type != null ? type.charset(UTF_8) : null;
+        String encoding = charset != null ? charset.displayName() : null;
+        InputStream bis = body != null ? body.byteStream() : null;
+        HashMap<String, String> map = new HashMap<>();
+        Headers headers = response.headers();
+        for (String key : headers.names()) {
+          map.put(key, headers.get(key));
+        }
+        int statusCode = response.code();
+        String message = response.message();
+        if (TextUtils.isEmpty(message)) {
+          message = "Unknown";
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            if (request.isRedirect()) {
-                return null;
-            }
+        if (response.isRedirect()) {
+          String location = response.header("Location");
+          if (location != null) {
+            view.post(new Runnable() {
+              @Override
+              public void run() {
+                view.loadUrl(location, requestHeaders);
+              }
+            });
+          }
+          return new WebResourceResponse(mimeType, encoding, 200, "OK", map, bis);
         }
 
-        if (!TextUtils.equals(request.getMethod(), "GET")) {
-            return null;
+        if (mimeType == null || !mimeType.equalsIgnoreCase("text/html")) {
+          return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
         }
 
-        try {
-            Map<String, String> requestHeaders = request.getRequestHeaders();
-            Request req = new Request.Builder()
-                .headers(Headers.of(requestHeaders))
-                .url(urlStr)
-                .build();
-
-            Response response = httpClient.newCall(req).execute();
-
-            if (response.isRedirect()) {
-                return null;
-            }
-
-            ResponseBody body = response.body();
-            MediaType type = body != null ? body.contentType() : null;
-            String mimeType = type != null ? type.toString() : null;
-            Charset charset = type != null ? type.charset(UTF_8) : null;
-            String encoding = charset != null ? charset.displayName() : null;
-            InputStream bis = body != null ? body.byteStream() : null;
-            HashMap<String, String> map = new HashMap<>();
-            Headers headers = response.headers();
-            for (String key : headers.names()) {
-                map.put(key, headers.get(key));
-            }
-            int statusCode = response.code();
-            String message = response.message();
-            if (TextUtils.isEmpty(message)) {
-                message = "Empty";
-            }
-
-            if (mimeType == null || !mimeType.startsWith("text/html")) {
-                return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
-            }
-
-            if (!response.isSuccessful()) {
-                return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
-            }
-
-            InputStreamWithInjectedJS iis = new InputStreamWithInjectedJS(
-                bis, ((RNCWebView) view).injectedJSBeforeDocumentLoad, charset);
-
-            return new WebResourceResponse("text/html", encoding, statusCode, message, map, iis);
-        } catch (IOException e) {
-            return null;
+        if (!response.isSuccessful()) {
+          return new WebResourceResponse(mimeType, encoding, statusCode, message, map, bis);
         }
+
+        InputStreamWithInjectedJS iis = new InputStreamWithInjectedJS(
+          bis, ((RNCWebView) view).injectedJSBeforeDocumentLoad, charset);
+
+        return new WebResourceResponse(mimeType, encoding, statusCode, message, map, iis);
+      } catch (IOException e) {
+        return null;
+      }
     }
 
     @Override
