@@ -77,18 +77,13 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 import javax.annotation.Nullable;
 
-import okhttp3.Cookie;
-import okhttp3.CookieJar;
 import okhttp3.Headers;
-import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -1296,30 +1291,4 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       }
     }
   }
-
-    private static class RNCWebViewCookieJar implements CookieJar {
-        @Override
-        public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
-            String urlString = url.toString();
-
-            for (Cookie cookie : cookies) {
-                CookieManager.getInstance().setCookie(urlString, cookie.toString());
-            }
-
-        }
-
-        @Override
-        public List<Cookie> loadForRequest(HttpUrl url) {
-            String cookie = CookieManager.getInstance().getCookie(url.toString());
-            if (TextUtils.isEmpty(cookie)) {
-                return Collections.emptyList();
-            }
-            String[] headers = cookie.split(";");
-            ArrayList<Cookie> cookies = new ArrayList<>(headers.length);
-            for (String header : headers) {
-                cookies.add(Cookie.parse(url, header));
-            }
-            return cookies;
-        }
-    }
 }
