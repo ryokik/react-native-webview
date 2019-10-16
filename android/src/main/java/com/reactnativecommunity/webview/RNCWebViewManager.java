@@ -837,7 +837,12 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
               }
             });
           }
-          return new WebResourceResponse(mimeType, encoding, 200, "OK", map, bis);
+          return new WebResourceResponse("text/html", "utf-8", new InputStream() {
+            @Override
+            public int read() throws IOException {
+              return 0;
+            }
+          });
         }
 
         if (mimeType == null || !mimeType.equalsIgnoreCase("text/html")) {
